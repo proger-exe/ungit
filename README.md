@@ -4,7 +4,9 @@
 [![ungit — Версии и доставка кода без Git-сервера.](docs/portfolio/card.png)](docs/portfolio/card.svg)
 <!-- portfolio-card:end -->
 
-A tiny version-control-and-deploy tool that is not git. Snapshot a directory, push the snapshot to a server, and let an agent there release it with health checks and automatic rollback. Pure Python standard library, no daemons on the client, no git.
+Отправить конкретную версию проекта на свой сервер и вернуть предыдущую, если проверка после установки завершилась ошибкой. В ungit команда `push` запускает этот путь целиком: от снимка файлов до выпуска релиза.
+
+Инструмент рассчитан на небольшие self-hosted проекты. Он хранит объекты, индекс, деревья и коммиты локально; серверный агент принимает пакет, проверяет его и выполняет сценарии развёртывания. Git-сервер для этого не нужен.
 
 ```
 ungit init        # create .ungit/ in the project
@@ -13,24 +15,28 @@ ungit push        # build a commit, send the payload to the remote agent
 ungit log / status / remote
 ```
 
-## Why
+## Что здесь можно оценить
 
-For small self-hosted projects the real question is not "how do I version this" but "how do I get this exact tree onto the box and roll back if it breaks". ungit keeps the object model of a VCS (files → index → tree → commit → ref) and makes `push` the deploy.
+Модель версий связана с жизненным циклом релиза: после deploy-скриптов агент запускает `health.sh` и при ненулевом коде завершения откатывается к предыдущему релизу. Это пример собственной CLI-утилиты с серверной частью и явным протоколом доставки.
 
-## Parts
+Python-код использует стандартную библиотеку. Для передачи пакетов предусмотрен внешний процесс croc; постоянно работающий клиентский демон не требуется.
 
-| Package | Role |
+Обсудить похожий проект: [sh3l.beer](https://sh3l.beer).
+
+## Компоненты
+
+| Пакет | Назначение |
 |---|---|
-| `core/` | object model, users and bearer tokens, repos / refs / payloads / jobs, remote protocol between CLI and agent |
-| `storage/` | local `.ungit/` layout: objects, refs, index |
-| `cli/` | `ungit` command |
-| `agent/` | server side: receive → verify → release → run deploy stages → health check → rollback on failure. Releases live under `/opt/ungitted`. |
+| `core/` | модель объектов, пользователи и bearer-токены, репозитории, ссылки, пакеты, задания и протокол CLI ↔ агент |
+| `storage/` | локальное хранилище `.ungit/`: объекты, ссылки и индекс |
+| `cli/` | команда `ungit` |
+| `agent/` | приём, проверка и выпуск релиза, deploy-скрипты, health-check и откат при ошибке; релизы хранятся в `/opt/ungitted` |
 
-Payloads are transferred with [croc](https://github.com/schollz/croc) as an optional subprocess boundary.
+Для передачи пакетов предусмотрена интеграция с [croc](https://github.com/schollz/croc) через отдельный процесс.
 
-## Deploy stages
+## Этапы развёртывания
 
-The agent runs scripts from the pushed tree, in order:
+Агент последовательно выполняет скрипты из отправленного дерева файлов:
 
 ```
 .ungit/deploy/preship.sh
@@ -39,21 +45,21 @@ The agent runs scripts from the pushed tree, in order:
 .ungit/deploy/health.sh    # non-zero exit → rollback to the previous release
 ```
 
-## Install
+## Установка
 
 ```bash
 ./install.sh            # venv + editable install of all four packages, adds ungit to PATH
 ungit --help
 ```
 
-## Tests
+## Проверки
 
 ```bash
 .venv/bin/pytest -q
 ```
 
-Each package has its own `AGENTS.md` with the design contract for that part.
+Контракт каждого пакета описан в его `AGENTS.md`.
 
-## License
+## Лицензия
 
 MIT
