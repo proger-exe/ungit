@@ -10,14 +10,6 @@ import threading
 from pathlib import Path
 from typing import Any
 
-from .hashing import canonical_json
-
-try:
-    from ungit_storage import read_json, write_json_atomic
-except ImportError:  # pragma: no cover - installed together in normal use
-    read_json = None  # type: ignore[assignment]
-    write_json_atomic = None  # type: ignore[assignment]
-
 
 DEFAULT_CORE_ROOT = Path.home() / ".local" / "share" / "ungit" / "core"
 
@@ -387,17 +379,13 @@ def _hash_token(token: str) -> str:
 
 
 def _read_json(path: Path) -> Any:
-    if read_json is None:
-        import json
+    from ungit_storage import read_json
 
-        with path.open("r", encoding="utf-8") as handle:
-            return json.load(handle)
     return read_json(path)
 
 
 def _write_json(path: Path, data: Any) -> None:
-    if write_json_atomic is None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(canonical_json(data) + b"\n")
-        return
+    # Import lazily: storage's local repository types depend on core's models.
+    from ungit_storage import write_json_atomic
+
     write_json_atomic(path, data)

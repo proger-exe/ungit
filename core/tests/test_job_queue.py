@@ -2,6 +2,8 @@ from concurrent.futures import ThreadPoolExecutor
 
 from ungit_core import CoreServiceStore
 import ungit_core.service_store as service_store
+import subprocess
+import sys
 
 
 def test_jobs_claim_in_push_order_once_under_concurrent_polling(tmp_path, monkeypatch):
@@ -21,3 +23,18 @@ def test_jobs_claim_in_push_order_once_under_concurrent_polling(tmp_path, monkey
     with ThreadPoolExecutor(max_workers=8) as pool:
         jobs = list(pool.map(lambda _: store.claim_job(agent["id"]), range(8)))
     assert [j["id"] for j in jobs if j] == ["job_a"]
+
+
+def test_service_uses_atomic_storage_with_storage_imported_first(tmp_path):
+    script = """
+import sys
+from pathlib import Path
+from unittest.mock import patch
+import ungit_storage
+from ungit_core.service_store import CoreServiceStore
+with patch('ungit_storage.write_json_atomic', wraps=ungit_storage.write_json_atomic) as writer:
+    store = CoreServiceStore(Path(sys.argv[1]))
+    store.upsert_repo('demo')
+    assert writer.call_count > 0, 'service bypassed atomic storage'
+"""
+    subprocess.run([sys.executable, "-c", script, str(tmp_path)], check=True, capture_output=True)

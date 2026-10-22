@@ -103,3 +103,18 @@ def test_legacy_index_without_blobs_requires_restaging(tmp_path):
     with pytest.raises(PayloadError, match="run ungit add"):
         build_delivery_payload(store, repo, project="demo", branch="master",
                                commit_id=commit, output_dir=tmp_path / "out")
+
+
+@pytest.mark.parametrize("field,value", [("created_at", None), ("created_at", True),
+                                         ("created_at", -1), ("ungit_version", "")])
+def test_delivery_requires_manifest_metadata(tmp_path, field, value):
+    repo, store, commit = delivery(tmp_path)
+    archive, digest = build_delivery_payload(store, repo, project="demo", branch="master",
+                                             commit_id=commit, output_dir=tmp_path / "out")
+    extracted = extract_delivery_payload(archive, tmp_path / "received")
+    manifest_file = extracted / "manifest.json"
+    manifest = json.loads(manifest_file.read_text())
+    manifest[field] = value
+    manifest_file.write_text(json.dumps(manifest))
+    with pytest.raises(PayloadError, match="manifest metadata"):
+        verify_payload(extracted, digest)

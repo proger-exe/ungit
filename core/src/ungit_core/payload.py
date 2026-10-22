@@ -124,6 +124,9 @@ def verify_payload(payload_dir: str | Path, expected_hash: str | None = None) ->
     if expected_hash is not None and actual != expected_hash:
         raise PayloadError(f"unexpected payload hash: {actual} != {expected_hash}")
     try:
+        if (type(manifest.get("created_at")) is not int or manifest["created_at"] < 0
+                or not isinstance(manifest.get("ungit_version"), str) or not manifest["ungit_version"].strip()):
+            raise PayloadError("invalid manifest metadata")
         project = manifest["project"]
         if not isinstance(project, str) or not project or project in {".", ".."} or "/" in project:
             raise PayloadError("invalid project")
