@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ungit-core"
+version = "0.1.0"
+description = "Core service and domain logic for Ungit"
+requires-python = ">=3.10"
+
+[project.scripts]
+ungit-core = "ungit_core.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]

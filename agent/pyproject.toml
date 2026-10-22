@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ungit-agent"
+version = "0.1.0"
+description = "Server-side deployment agent for Ungit"
+requires-python = ">=3.10"
+
+[project.scripts]
+ungit-agent = "ungit_agent.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src", "../core/src", "../storage/src"]
+testpaths = ["tests"]
