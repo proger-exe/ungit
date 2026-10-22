@@ -2,16 +2,18 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import shutil
 import tarfile
 import tempfile
 import time
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
-from .api import read_commit, read_tree
-from .hashing import content_hash
+from .api import _validate_relative_path, read_commit, read_tree
+from .errors import InvalidPathError
+from .hashing import content_hash, object_id
 from .store import RepositoryStore
 
 PAYLOAD_NAME = "delivery.tar.gz"
@@ -45,25 +47,33 @@ def build_delivery_payload(
 
         commit = read_commit(store, commit_id)
         tree = read_tree(store, commit.tree)
+        if commit.branch != branch:
+            raise PayloadError("branch does not match commit")
         for entry in tree.entries:
-            source = repo / entry.path
-            if not source.is_file():
-                raise PayloadError(f"payload file missing: {entry.path}")
+            _validate_relative_path(entry.path)
+            if not store.has_object("blob", entry.hash):
+                raise PayloadError(f"snapshot missing for {entry.path}; run ungit add . again")
+            data = base64.b64decode(store.read_object("blob", entry.hash)["data"], validate=True)
+            if content_hash(data) != entry.hash:
+                raise PayloadError(f"snapshot hash mismatch: {entry.path}")
             target = files_dir / entry.path
             target.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(source, target)
+            target.write_bytes(data)
+            target.chmod(entry.mode)
 
         for name in DEPLOY_SCRIPTS:
             source = repo / ".ungit" / "deploy" / name
             target = deploy_dir / name
+            if source.is_symlink() or not _inside(repo, source):
+                raise PayloadError(f"deploy script must not be a symlink: {name}")
             if source.exists():
                 shutil.copy2(source, target)
             else:
                 target.write_text("#!/bin/sh\nexit 0\n", encoding="utf-8")
                 target.chmod(0o755)
 
-        _write_json(staging / "commit.json", commit.to_dict())
-        _write_json(staging / "tree.json", tree.to_dict())
+        _write_json(staging / "commit.json", store.read_object("commit", commit_id))
+        _write_json(staging / "tree.json", store.read_object("tree", commit.tree))
         payload_hash = compute_payload_hash(staging)
         manifest = {
             "project": project,
@@ -78,7 +88,7 @@ def build_delivery_payload(
         archive = output / PAYLOAD_NAME
         with tarfile.open(archive, "w:gz") as handle:
             for path in sorted(staging.rglob("*")):
-                handle.add(path, arcname=path.relative_to(staging).as_posix())
+                handle.add(path, arcname=path.relative_to(staging).as_posix(), recursive=False)
         return archive, payload_hash
 
 
@@ -86,10 +96,16 @@ def extract_delivery_payload(archive: str | Path, output_dir: str | Path) -> Pat
     target = Path(output_dir)
     target.mkdir(parents=True, exist_ok=True)
     with tarfile.open(archive, "r:gz") as handle:
+        names = set()
         for member in handle.getmembers():
             member_path = target / member.name
-            if not _inside(target, member_path):
+            archive_path = PurePosixPath(member.name)
+            if (archive_path.is_absolute() or ".." in archive_path.parts
+                    or str(archive_path) != member.name.rstrip("/")
+                    or not _inside(target, member_path) or member.name in names
+                    or not (member.isfile() or member.isdir())):
                 raise PayloadError(f"unsafe payload path: {member.name}")
+            names.add(member.name)
         handle.extractall(target, filter="data")
     return target
 
@@ -107,6 +123,37 @@ def verify_payload(payload_dir: str | Path, expected_hash: str | None = None) ->
         raise PayloadError(f"payload hash mismatch: {actual} != {manifest_hash}")
     if expected_hash is not None and actual != expected_hash:
         raise PayloadError(f"unexpected payload hash: {actual} != {expected_hash}")
+    try:
+        project = manifest["project"]
+        if not isinstance(project, str) or not project or project in {".", ".."} or "/" in project:
+            raise PayloadError("invalid project")
+        commit = _read_json(root / "commit.json")
+        tree = _read_json(root / "tree.json")
+        if object_id("commit", commit) != manifest["commit"] or commit["branch"] != manifest["branch"]:
+            raise PayloadError("manifest does not match commit")
+        if object_id("tree", tree) != commit["tree"]:
+            raise PayloadError("tree does not match commit")
+        expected_files = set()
+        for entry in tree["entries"]:
+            path = entry["path"]
+            _validate_relative_path(path)
+            if path in expected_files or entry["type"] != "file":
+                raise PayloadError(f"invalid tree entry: {path}")
+            expected_files.add(path)
+            file = root / "files" / path
+            if file.is_symlink() or not file.is_file() or content_hash(file.read_bytes()) != entry["hash"]:
+                raise PayloadError(f"file does not match tree: {path}")
+            mode = entry.get("mode", 0o644)
+            if mode not in {0o644, 0o755} or file.stat().st_mode & 0o777 != mode:
+                raise PayloadError(f"mode does not match tree: {path}")
+        actual_files = {p.relative_to(root / "files").as_posix() for p in (root / "files").rglob("*") if p.is_file()}
+        if actual_files != expected_files:
+            raise PayloadError("payload contains files outside the tree")
+        for name in DEPLOY_SCRIPTS:
+            if not (root / "deploy" / name).is_file():
+                raise PayloadError(f"missing deploy script: {name}")
+    except (KeyError, TypeError, ValueError, InvalidPathError) as exc:
+        raise PayloadError(f"invalid payload: {exc}") from exc
     return manifest
 
 

@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import fcntl
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -25,7 +27,7 @@ def ensure_agent_project(root: str | Path, project: str) -> Path:
 def create_release(root: str | Path, project: str, commit_id: str) -> Path:
     project_root = ensure_agent_project(root, project)
     release = project_root / "releases" / safe_segment(commit_id, label="commit id")
-    release.mkdir(parents=True, exist_ok=True)
+    release.mkdir(parents=True, exist_ok=False)
     return release
 
 
@@ -38,6 +40,8 @@ def switch_current(root: str | Path, project: str, commit_id: str) -> None:
     current = project_root / "current"
     previous = project_root / "previous"
     old_target = _read_symlink(current)
+    if old_target is not None and (project_root / old_target).resolve() == release.resolve():
+        return
     _replace_symlink(current, release)
     if old_target:
         _replace_symlink(previous, project_root / old_target)
@@ -50,14 +54,31 @@ def switch_current(root: str | Path, project: str, commit_id: str) -> None:
             "previous_commit": _commit_from_release_target(old_target),
             "current_release": str(release),
             "previous_release": str(project_root / old_target) if old_target else None,
-            "last_deploy_status": "success",
+            "last_deploy_status": "switched",
         }
     )
     write_state(root, project, state)
 
 
-def rollback_current(root: str | Path, project: str) -> None:
+def rollback_current(root: str | Path, project: str, *, restore_state: dict[str, Any] | None = None) -> None:
     project_root = _existing_project_root(root, project)
+    if restore_state is not None:
+        state = dict(restore_state)
+        for name in ("current", "previous"):
+            link = project_root / name
+            commit = state.get(f"{name}_commit")
+            if commit:
+                target = project_root / "releases" / safe_segment(commit, label="commit id")
+                if not target.is_dir():
+                    raise ObjectNotFound(f"release missing: {commit}")
+                _replace_symlink(link, target)
+            else:
+                link.unlink(missing_ok=True)
+                state[f"{name}_commit"] = None
+                state[f"{name}_release"] = None
+        state["last_deploy_status"] = "rollback"
+        write_state(root, project, state)
+        return
     previous = project_root / "previous"
     if not previous.is_symlink():
         raise RepositoryNotFound(f"previous release not found for project: {project}")
@@ -105,6 +126,17 @@ def append_log(root: str | Path, project: str, deploy_id: str, line: str) -> Non
     path = project_root / "logs" / f"deploy-{log_name}.log"
     with path.open("a", encoding="utf-8") as handle:
         handle.write(line.rstrip("\n") + "\n")
+
+
+@contextmanager
+def project_lock(root: str | Path, project: str):
+    project_root = ensure_agent_project(root, project)
+    with (project_root / ".deploy.lock").open("a") as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle, fcntl.LOCK_UN)
 
 
 def _project_root(root: str | Path, project: str) -> Path:

@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "ungit-core"
 version = "0.1.0"
 description = "Core service and domain logic for Ungit"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 
 [project.scripts]
 ungit-core = "ungit_core.main:main"

@@ -6,6 +6,7 @@ import hashlib
 import secrets
 import shutil
 import time
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -40,6 +41,7 @@ class CoreForbidden(CoreStoreError):
 class CoreServiceStore:
     def __init__(self, root: str | Path = DEFAULT_CORE_ROOT) -> None:
         self.root = Path(root)
+        self._claim_lock = threading.Lock()
 
     def ensure(self) -> None:
         for name in ("users", "tokens", "repos", "agents", "pushes", "jobs", "events", "payloads"):
@@ -233,6 +235,7 @@ class CoreServiceStore:
                 "payload_hash": payload_hash,
                 "status": "queued",
                 "created_at": int(time.time()),
+                "queued_at_ns": time.time_ns(),
                 "claimed_at": None,
             }
             self._write("jobs", job_id, job)
@@ -258,13 +261,14 @@ class CoreServiceStore:
         agent = self.get_agent(agent_id)
         if actor is not None and not self._can_run_agent(actor, agent):
             raise CoreForbidden("cannot claim jobs for agent")
-        for job in self.list_jobs():
-            if job.get("agent_id") != agent_id or job.get("status") != "queued":
-                continue
-            job["status"] = "claimed"
-            job["claimed_at"] = int(time.time())
-            self._write("jobs", job["id"], job)
-            return job
+        with self._claim_lock:
+            for job in self.list_jobs():
+                if job.get("agent_id") != agent_id or job.get("status") != "queued":
+                    continue
+                job["status"] = "claimed"
+                job["claimed_at"] = int(time.time())
+                self._write("jobs", job["id"], job)
+                return job
         return None
 
     def add_event(
@@ -309,10 +313,11 @@ class CoreServiceStore:
 
     def list_jobs(self) -> list[dict[str, Any]]:
         self.ensure()
-        return [
+        jobs = [
             self._read_required("jobs", path.stem)
             for path in sorted((self.root / "jobs").glob("*.json"))
         ]
+        return sorted(jobs, key=lambda job: (job.get("queued_at_ns", job["created_at"] * 1_000_000_000), job["id"]))
 
     def list_tokens(self) -> list[dict[str, Any]]:
         self.ensure()

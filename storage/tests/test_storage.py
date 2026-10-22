@@ -183,3 +183,24 @@ def test_append_log_appends_lines_and_rejects_unsafe_id(tmp_path: Path) -> None:
     assert log.read_text(encoding="utf-8") == "[deploy] started\n[deploy] success\n"
     with pytest.raises(InvalidStoragePath):
         append_log(tmp_path, "demo", "../bad", "x")
+
+
+def test_project_lock_serializes_deploy_and_rollback(tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    from ungit_storage import project_lock
+
+    started, acquired = Event(), Event()
+
+    def other_operation():
+        started.set()
+        with project_lock(tmp_path, "demo"):
+            acquired.set()
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        with project_lock(tmp_path, "demo"):
+            future = executor.submit(other_operation)
+            assert started.wait(timeout=2)
+            assert not acquired.wait(timeout=0.1)
+        future.result(timeout=2)
+    assert acquired.is_set()

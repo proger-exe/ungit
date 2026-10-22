@@ -14,13 +14,14 @@ class IndexEntry:
     path: str
     hash: str
     size: int
+    mode: int = 0o644
 
     def to_dict(self) -> dict[str, Any]:
-        return {"path": self.path, "hash": self.hash, "size": self.size}
+        return {"path": self.path, "hash": self.hash, "size": self.size, "mode": self.mode}
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "IndexEntry":
-        return cls(path=str(data["path"]), hash=str(data["hash"]), size=int(data["size"]))
+        return cls(path=str(data["path"]), hash=str(data["hash"]), size=int(data["size"]), mode=int(data.get("mode", 0o644)))
 
 
 @dataclass(frozen=True)
@@ -42,13 +43,14 @@ class TreeEntry:
     path: str
     type: Literal["file"]
     hash: str
+    mode: int = 0o644
 
     def to_dict(self) -> dict[str, Any]:
-        return {"path": self.path, "type": self.type, "hash": self.hash}
+        return {"path": self.path, "type": self.type, "hash": self.hash, "mode": self.mode}
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "TreeEntry":
-        return cls(path=str(data["path"]), type="file", hash=str(data["hash"]))
+        return cls(path=str(data["path"]), type="file", hash=str(data["hash"]), mode=int(data.get("mode", 0o644)))
 
 
 @dataclass(frozen=True)

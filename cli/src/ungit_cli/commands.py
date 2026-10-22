@@ -76,22 +76,22 @@ def cmd_push(
         raise CliError("push requires -c/--comment")
 
     store = _store(cwd)
+    config = _read_config(cwd)
+    remote = _default_remote(config)
+    url = core_url or str((remote or {}).get("core_url") or DEFAULT_CORE_URL)
+    token = _require_token(url) if remote else None
     try:
         commit_id = create_commit(store, branch, comment)
     except (UngitCoreError, StorageError) as exc:
         raise CliError(str(exc)) from exc
 
     print(f"[commit] created {commit_id}", file=stdout)
-    config = _read_config(cwd)
-    remote = _default_remote(config)
     if remote is None:
         print("[push] local commit ready", file=stdout)
         return 0
 
     repo_id = str(remote["repo_id"])
     project = str(remote.get("project") or cwd.name)
-    url = core_url or str(remote.get("core_url") or DEFAULT_CORE_URL)
-    token = _require_token(url)
     try:
         with tempfile.TemporaryDirectory(prefix="ungit-delivery-") as temp_name:
             archive, payload_hash = build_delivery_payload(

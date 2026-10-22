@@ -72,6 +72,9 @@ def test_agent_run_once_receives_and_deploys(tmp_path: Path) -> None:
             return {
                 "id": "job_1",
                 "project": "demo",
+                "branch": "master",
+                "commit": commit_id,
+                "agent_id": "agent_1",
                 "payload_hash": payload_hash,
             }
 
