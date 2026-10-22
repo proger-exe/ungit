@@ -1,7 +1,7 @@
 # ungit
 
 <!-- portfolio-card:start -->
-[![ungit — Версии и доставка кода без Git-сервера.](docs/portfolio/card.png)](docs/portfolio/card.svg)
+[![sh3lby.code — нейтральная обложка](docs/portfolio/card.png)](docs/portfolio/card.svg)
 <!-- portfolio-card:end -->
 
 A tiny version-control-and-deploy tool that is not git. Snapshot a directory, push the snapshot to a server, and let an agent there release it with health checks and automatic rollback. Pure Python standard library, no daemons on the client, no git.
