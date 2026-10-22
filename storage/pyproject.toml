@@ -6,7 +6,8 @@ build-backend = "setuptools.build_meta"
 name = "ungit-storage"
 version = "0.1.0"
 description = "Filesystem storage for Ungit"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
+dependencies = ["ungit-core==0.1.0"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

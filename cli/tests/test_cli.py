@@ -294,3 +294,14 @@ def test_log_empty_and_parent_chain(tmp_path: Path) -> None:
     assert len(lines) == 2
     assert lines[0].endswith(" second")
     assert lines[1].endswith(" first")
+
+
+def test_push_without_credentials_does_not_advance_local_ref(tmp_path, monkeypatch):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "credentials"))
+    invoke(tmp_path, ["init"])
+    (tmp_path / ".ungit/config.json").write_text(
+        '{"remotes":{"origin":{"repo_id":"repo_test","core_url":"http://core"}}}')
+    code, _, stderr = invoke(tmp_path, ["push", "master", "-c", "missing auth"])
+    assert code == 1
+    assert "not logged in" in stderr
+    assert LocalRepositoryStore(tmp_path).read_ref("master") is None

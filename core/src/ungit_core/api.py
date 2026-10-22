@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import time
 from pathlib import Path
 from typing import Callable, Iterable
@@ -35,7 +36,11 @@ def scan_files(root: str | Path, paths: Iterable[str | Path]) -> list[IndexEntry
             raise InvalidPathError(f"path does not exist: {input_path}")
         if path.is_dir():
             for child in sorted(path.rglob("*")):
-                if child.is_file() and not _is_ignored(root_path, child):
+                if _is_ignored(root_path, child):
+                    continue
+                if child.is_symlink():
+                    raise InvalidPathError(f"symlinks are not supported: {child}")
+                if child.is_file():
                     entries.append(_index_entry(root_path, child))
         elif path.is_file() and not _is_ignored(root_path, path):
             entries.append(_index_entry(root_path, path))
@@ -44,8 +49,24 @@ def scan_files(root: str | Path, paths: Iterable[str | Path]) -> list[IndexEntry
 
 def add_files(store: RepositoryStore, root: str | Path, paths: Iterable[str | Path]) -> Index:
     current = store.read_index()
-    scanned = scan_files(root, paths)
+    root = Path(root).resolve()
+    selected = [_resolve_input_path(root, path) for path in paths]
+    for path in selected:
+        relative = path.relative_to(root).as_posix()
+        tracked = any(entry.path == relative or entry.path.startswith(relative + "/") for entry in current.files)
+        if not path.exists() and not tracked:
+            raise InvalidPathError(f"path does not exist: {relative}")
+    scanned = scan_files(root, [path for path in selected if path.exists()])
     by_path = {entry.path: entry for entry in current.files}
+    for entry in current.files:
+        file_path = root / entry.path
+        if any(file_path == path or path in file_path.parents for path in selected):
+            by_path.pop(entry.path)
+    for entry in scanned:
+        data = (root / entry.path).read_bytes()
+        if content_hash(data) != entry.hash:
+            raise RepositoryError(f"file changed while staging: {entry.path}; run add again")
+        store.write_object("blob", entry.hash, {"data": base64.b64encode(data).decode("ascii")})
     by_path.update({entry.path: entry for entry in scanned})
     updated = Index(tuple(by_path[path] for path in sorted(by_path)))
     store.write_index(updated)
@@ -60,7 +81,7 @@ def build_tree(index: Index) -> Tree:
         if item.path in seen:
             raise InvalidObjectError(f"duplicate tree path: {item.path}")
         seen.add(item.path)
-        entries.append(TreeEntry(path=item.path, type="file", hash=item.hash))
+        entries.append(TreeEntry(path=item.path, type="file", hash=item.hash, mode=item.mode))
     return Tree(tuple(entries))
 
 
@@ -171,6 +192,8 @@ def build_delivery_manifest(
 def _resolve_input_path(root: Path, input_path: str | Path) -> Path:
     raw_path = Path(input_path)
     path = raw_path if raw_path.is_absolute() else root / raw_path
+    if path.is_symlink() or any(p.is_symlink() for p in path.parents if p != root and root in p.parents):
+        raise InvalidPathError(f"symlinks are not supported: {input_path}")
     resolved = path.resolve()
     if resolved != root and root not in resolved.parents:
         raise InvalidPathError(f"path outside repository root: {input_path}")
@@ -181,7 +204,8 @@ def _index_entry(root: Path, path: Path) -> IndexEntry:
     relative = _relative_posix(root, path)
     _validate_relative_path(relative)
     data = path.read_bytes()
-    return IndexEntry(path=relative, hash=content_hash(data), size=len(data))
+    mode = 0o755 if path.stat().st_mode & 0o111 else 0o644
+    return IndexEntry(path=relative, hash=content_hash(data), size=len(data), mode=mode)
 
 
 def _relative_posix(root: Path, path: Path) -> str:

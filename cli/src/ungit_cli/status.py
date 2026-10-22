@@ -20,7 +20,7 @@ def working_tree_status(root: str | Path, index: Index) -> list[tuple[str, str]]
             changes.append(("+", path))
         elif indexed_entry is not None and current_entry is None:
             changes.append(("-", path))
-        elif indexed_entry and current_entry and indexed_entry.hash != current_entry.hash:
+        elif indexed_entry and current_entry and (indexed_entry.hash, indexed_entry.mode) != (current_entry.hash, current_entry.mode):
             changes.append(("~", path))
 
     return changes

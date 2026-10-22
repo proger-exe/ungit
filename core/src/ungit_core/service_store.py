@@ -6,16 +6,9 @@ import hashlib
 import secrets
 import shutil
 import time
+import threading
 from pathlib import Path
 from typing import Any
-
-from .hashing import canonical_json
-
-try:
-    from ungit_storage import read_json, write_json_atomic
-except ImportError:  # pragma: no cover - installed together in normal use
-    read_json = None  # type: ignore[assignment]
-    write_json_atomic = None  # type: ignore[assignment]
 
 
 DEFAULT_CORE_ROOT = Path.home() / ".local" / "share" / "ungit" / "core"
@@ -40,6 +33,7 @@ class CoreForbidden(CoreStoreError):
 class CoreServiceStore:
     def __init__(self, root: str | Path = DEFAULT_CORE_ROOT) -> None:
         self.root = Path(root)
+        self._claim_lock = threading.Lock()
 
     def ensure(self) -> None:
         for name in ("users", "tokens", "repos", "agents", "pushes", "jobs", "events", "payloads"):
@@ -233,6 +227,7 @@ class CoreServiceStore:
                 "payload_hash": payload_hash,
                 "status": "queued",
                 "created_at": int(time.time()),
+                "queued_at_ns": time.time_ns(),
                 "claimed_at": None,
             }
             self._write("jobs", job_id, job)
@@ -258,13 +253,14 @@ class CoreServiceStore:
         agent = self.get_agent(agent_id)
         if actor is not None and not self._can_run_agent(actor, agent):
             raise CoreForbidden("cannot claim jobs for agent")
-        for job in self.list_jobs():
-            if job.get("agent_id") != agent_id or job.get("status") != "queued":
-                continue
-            job["status"] = "claimed"
-            job["claimed_at"] = int(time.time())
-            self._write("jobs", job["id"], job)
-            return job
+        with self._claim_lock:
+            for job in self.list_jobs():
+                if job.get("agent_id") != agent_id or job.get("status") != "queued":
+                    continue
+                job["status"] = "claimed"
+                job["claimed_at"] = int(time.time())
+                self._write("jobs", job["id"], job)
+                return job
         return None
 
     def add_event(
@@ -309,10 +305,11 @@ class CoreServiceStore:
 
     def list_jobs(self) -> list[dict[str, Any]]:
         self.ensure()
-        return [
+        jobs = [
             self._read_required("jobs", path.stem)
             for path in sorted((self.root / "jobs").glob("*.json"))
         ]
+        return sorted(jobs, key=lambda job: (job.get("queued_at_ns", job["created_at"] * 1_000_000_000), job["id"]))
 
     def list_tokens(self) -> list[dict[str, Any]]:
         self.ensure()
@@ -382,17 +379,13 @@ def _hash_token(token: str) -> str:
 
 
 def _read_json(path: Path) -> Any:
-    if read_json is None:
-        import json
+    from ungit_storage import read_json
 
-        with path.open("r", encoding="utf-8") as handle:
-            return json.load(handle)
     return read_json(path)
 
 
 def _write_json(path: Path, data: Any) -> None:
-    if write_json_atomic is None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_bytes(canonical_json(data) + b"\n")
-        return
+    # Import lazily: storage's local repository types depend on core's models.
+    from ungit_storage import write_json_atomic
+
     write_json_atomic(path, data)

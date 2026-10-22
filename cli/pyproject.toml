@@ -6,7 +6,8 @@ build-backend = "setuptools.build_meta"
 name = "ungit-cli"
 version = "0.1.0"
 description = "Command line interface for Ungit"
-requires-python = ">=3.10"
+requires-python = ">=3.12"
+dependencies = ["ungit-core==0.1.0", "ungit-storage==0.1.0"]
 
 [project.scripts]
 ungit = "ungit_cli.main:main"

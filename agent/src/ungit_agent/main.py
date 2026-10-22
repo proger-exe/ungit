@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 from pathlib import Path
 from typing import Sequence
 
-from ungit_core import DEFAULT_CORE_URL
+from ungit_core import CoreClientError, DEFAULT_CORE_URL
+from ungit_storage import StorageError
 
 from .runner import DEFAULT_AGENT_ROOT, AgentError, rollback, run_loop
 
@@ -86,8 +88,8 @@ def run(argv: Sequence[str] | None = None) -> int:
             )
         if args.command == "rollback":
             return rollback(args.project, root=Path(args.root))
-    except AgentError as exc:
-        print(str(exc))
+    except (AgentError, CoreClientError, StorageError, OSError, ValueError) as exc:
+        print(str(exc), file=sys.stderr)
         return 1
     parser.error(f"unknown command: {args.command}")
     return 2

@@ -6,6 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 from typing import Sequence, TextIO
+from ungit_storage import StorageError
 
 from .commands import (
     cmd_add,
@@ -214,6 +215,9 @@ def run(
     except CliError as exc:
         print(exc.message, file=err)
         return exc.exit_code
+    except (StorageError, OSError, ValueError, KeyError) as exc:
+        print(f"[error] {exc}", file=err)
+        return 1
 
     parser.error(f"unknown command: {args.command}")
     return 2
