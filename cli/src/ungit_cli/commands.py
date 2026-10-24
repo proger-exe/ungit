@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import tempfile
+import time
 from pathlib import Path
 from typing import Iterable, TextIO
 
@@ -68,6 +69,8 @@ def cmd_push(
     core_url: str | None,
     manual_code: str | None,
     stdout: TextIO,
+    *,
+    wait: bool = False,
 ) -> int:
     if manual_code:
         print("[push] --code is not used with remote core", file=stdout)
@@ -103,7 +106,8 @@ def cmd_push(
                 output_dir=temp_name,
             )
             print("[delivery] payload prepared", file=stdout)
-            result = CoreClient(url, token=token).push_repo(
+            client = CoreClient(url, token=token)
+            result = client.push_repo(
                 repo_id,
                 branch=branch,
                 commit=commit_id,
@@ -114,9 +118,27 @@ def cmd_push(
             jobs = result["jobs"]
             print(f"[remote] pushed {branch} -> {push['id']}", file=stdout)
             print(f"[pipeline] queued {len(jobs)} jobs", file=stdout)
+            if wait:
+                statuses = [_follow_job(client, str(job["id"]), stdout) for job in jobs]
+                return 1 if "failed" in statuses else 0
     except (CoreClientError, PayloadError, UngitCoreError, StorageError) as exc:
         raise CliError(str(exc)) from exc
     return 0
+
+
+def _follow_job(client: CoreClient, job_id: str, stdout: TextIO) -> str:
+    # ponytail: no timeout; a job whose agent is down stays queued until Ctrl-C.
+    shown = 0
+    while True:
+        data = client.job_events(job_id)
+        for event in data["events"][shown:]:
+            if event.get("line"):
+                print(event["line"], file=stdout, flush=True)
+        shown = len(data["events"])
+        status = str(data["job"]["status"])
+        if status in ("success", "failed"):
+            return status
+        time.sleep(1)
 
 
 def cmd_agent_link(cwd: Path, agent_name: str, core_url: str | None, stdout: TextIO) -> int:

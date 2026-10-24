@@ -191,13 +191,14 @@ def _run_stage(
     env_base: dict[str, str],
 ) -> None:
     script = release / ".ungit" / "deploy" / f"{stage}.sh"
+    log_path = Path(root) / "projects" / project / "logs" / f"deploy-{deploy_id}.log"
     _event(client, deploy_id, stage, f"[{stage}] started")
     env = dict(os.environ)
     env.update(env_base)
     env["UNGIT_STAGE"] = stage
     append_log(root, project, deploy_id, f"[{stage}] started")
     try:
-        with (Path(root) / "projects" / project / "logs" / f"deploy-{deploy_id}.log").open("a") as log:
+        with log_path.open("a") as log:
             process = subprocess.Popen([str(script)], cwd=release, env=env,
                                        stdout=log, stderr=subprocess.STDOUT, start_new_session=True)
             try:
@@ -213,8 +214,10 @@ def _run_stage(
         raise AgentError(f"[{stage}] could not start: {exc}") from exc
     if returncode != 0:
         line = f"[{stage}] failed exit={returncode}"
+        tail = log_path.read_text(errors="replace").splitlines()[-30:]
         append_log(root, project, deploy_id, line)
-        _event(client, deploy_id, "failed", line)
+        # Status stays the stage name: "failed" is reserved for the final event, after rollback.
+        _event(client, deploy_id, stage, "\n".join([*tail, line]))
         raise AgentError(line)
     _event(client, deploy_id, stage, f"[{stage}] ok")
     append_log(root, project, deploy_id, f"[{stage}] ok")

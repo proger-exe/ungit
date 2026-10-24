@@ -281,6 +281,12 @@ class CoreServiceStore:
         self._write("events", job_id, events)
         return job
 
+    def job_events(self, job_id: str, actor: dict[str, Any] | None = None) -> dict[str, Any]:
+        job = self.get_job(job_id)
+        if actor is not None and not self._can_access_job(actor, job):
+            raise CoreForbidden("cannot read job")
+        return {"job": job, "events": self._read_optional("events", job_id) or []}
+
     def get_user(self, user_id: str) -> dict[str, Any]:
         return self._read_required("users", user_id)
 

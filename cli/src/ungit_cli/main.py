@@ -84,6 +84,8 @@ agent server:
     push_parser.add_argument("branch", help="branch/ref name to update")
     push_parser.add_argument("-c", "--comment", help="commit/deploy message")
     push_parser.add_argument("--core-url", help="override remote core URL for this push")
+    push_parser.add_argument("--wait", action="store_true",
+                             help="follow the deploy and exit non-zero if it fails")
     push_parser.add_argument("--code", help=argparse.SUPPRESS)
 
     log_parser = subparsers.add_parser(
@@ -195,7 +197,7 @@ def run(
         if args.command == "status":
             return cmd_status(workdir, out)
         if args.command == "push":
-            return cmd_push(workdir, args.branch, args.comment, args.core_url, args.code, out)
+            return cmd_push(workdir, args.branch, args.comment, args.core_url, args.code, out, wait=args.wait)
         if args.command == "log":
             return cmd_log(workdir, args.branch, out)
         if args.command == "login":
