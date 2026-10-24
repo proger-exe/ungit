@@ -96,6 +96,34 @@ def test_scan_files_recurses_sorts_and_ignores(tmp_path) -> None:
     assert entries[1].size == 2
 
 
+def test_scan_files_honours_ungitignore(tmp_path) -> None:
+    (tmp_path / ".ungitignore").write_text(
+        "# secrets\n.env.prod\n*.log\nbuild/\n/deploy/local/*.yml\n", encoding="utf-8"
+    )
+    for name in (
+        "app.py",
+        ".env.prod",
+        "deploy/.env.prod",
+        "deploy/compose.yml",
+        "deploy/local/dev.yml",
+        "deploy/local/keep.txt",
+        "nested/deploy/local/dev.yml",
+        "logs/run.log",
+        "web/build/index.html",
+    ):
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_text("x", encoding="utf-8")
+
+    assert [entry.path for entry in scan_files(tmp_path, ["."])] == [
+        ".ungitignore",
+        "app.py",
+        "deploy/compose.yml",
+        "deploy/local/keep.txt",
+        "nested/deploy/local/dev.yml",
+    ]
+    assert scan_files(tmp_path, ["deploy/.env.prod"]) == []
+
+
 def test_scan_files_ignores_symlinks_inside_ignored_dirs(tmp_path) -> None:
     external = tmp_path.parent / "python3.12"
     external.write_text("python", encoding="utf-8")

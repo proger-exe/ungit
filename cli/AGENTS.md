@@ -123,10 +123,11 @@ __pycache__/
 *.pyc
 ```
 
+Плюс шаблоны из `.ungitignore` в корне (подмножество gitignore: без `!` и `**`).
+
 Позже добавить поддержку:
 
 ```text
-.ungitignore
 .gitignore
 ```
 

@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import base64
 import time
-from pathlib import Path
+from fnmatch import fnmatchcase
+from pathlib import Path, PurePosixPath
 from typing import Callable, Iterable
 
 from .errors import InvalidObjectError, InvalidPathError, RepositoryError
@@ -29,6 +30,7 @@ def init_repository(store: RepositoryStore) -> None:
 
 def scan_files(root: str | Path, paths: Iterable[str | Path]) -> list[IndexEntry]:
     root_path = Path(root).resolve()
+    patterns = _ignore_patterns(root_path)
     entries: list[IndexEntry] = []
     for input_path in paths:
         path = _resolve_input_path(root_path, input_path)
@@ -36,13 +38,13 @@ def scan_files(root: str | Path, paths: Iterable[str | Path]) -> list[IndexEntry
             raise InvalidPathError(f"path does not exist: {input_path}")
         if path.is_dir():
             for child in sorted(path.rglob("*")):
-                if _is_ignored(root_path, child):
+                if _is_ignored(root_path, child, patterns):
                     continue
                 if child.is_symlink():
                     raise InvalidPathError(f"symlinks are not supported: {child}")
                 if child.is_file():
                     entries.append(_index_entry(root_path, child))
-        elif path.is_file() and not _is_ignored(root_path, path):
+        elif path.is_file() and not _is_ignored(root_path, path, patterns):
             entries.append(_index_entry(root_path, path))
     return sorted(_dedupe(entries), key=lambda entry: entry.path)
 
@@ -215,9 +217,28 @@ def _relative_posix(root: Path, path: Path) -> str:
         raise InvalidPathError(f"path outside repository root: {path}") from exc
 
 
-def _is_ignored(root: Path, path: Path) -> bool:
+def _ignore_patterns(root: Path) -> list[str]:
+    # ponytail: gitignore subset (no "!" negation, no "**"); add when a project needs them
+    path = root / ".ungitignore"
+    if not path.is_file():
+        return []
+    lines = (line.strip() for line in path.read_text(encoding="utf-8").splitlines())
+    return [line.rstrip("/") for line in lines if line and not line.startswith("#")]
+
+
+def _is_ignored(root: Path, path: Path, patterns: Iterable[str] = ()) -> bool:
     parts = _relative_posix(root, path).split("/")
-    return any(part in IGNORE_DIRS for part in parts) or path.name.endswith(".pyc")
+    if any(part in IGNORE_DIRS for part in parts) or path.name.endswith(".pyc"):
+        return True
+    prefixes = ["/" + "/".join(parts[: i + 1]) for i in range(len(parts))]
+    for pattern in patterns:
+        if "/" in pattern:
+            anchored = "/" + pattern.lstrip("/")
+            if any(PurePosixPath(prefix).match(anchored) for prefix in prefixes):
+                return True
+        elif any(fnmatchcase(part, pattern) for part in parts):
+            return True
+    return False
 
 
 def _dedupe(entries: Iterable[IndexEntry]) -> list[IndexEntry]:
