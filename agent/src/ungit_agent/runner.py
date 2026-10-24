@@ -18,7 +18,8 @@ from ungit_core import (
     extract_delivery_payload,
     verify_payload,
 )
-from ungit_storage import append_log, create_release, project_lock, read_state, rollback_current, switch_current, write_state
+from ungit_storage import (append_log, create_release, project_lock, read_state, release_name, rollback_current,
+                           switch_current, write_state)
 
 STAGES = ("preship", "ship", "postship", "health")
 DEFAULT_AGENT_ROOT = Path("/opt/ungitted")
@@ -121,7 +122,7 @@ def _deploy_payload(
     project_root = Path(root) / "projects" / project
     current = project_root / "current"
     if (before.get("current_commit") == commit and before.get("last_deploy_status") in {"success", "rollback"}
-            and current.is_symlink() and current.resolve() == project_root / "releases" / commit):
+            and current.is_symlink() and current.resolve() == project_root / "releases" / release_name(commit)):
         _event(client, deploy_id, "success", "[deploy] release already current")
         return
     try:
@@ -149,7 +150,7 @@ def _deploy_payload(
     _run_stage(client, deploy_id, root, project, release, "ship", env_base)
     try:
         switch_current(root, project, commit)
-        _event(client, deploy_id, "switched", f"[switch] current -> releases/{commit}")
+        _event(client, deploy_id, "switched", f"[switch] current -> releases/{release.name}")
         _run_stage(client, deploy_id, root, project, release, "postship", env_base)
         _run_stage(client, deploy_id, root, project, release, "health", env_base)
         state = read_state(root, project)

@@ -93,7 +93,7 @@ def test_agent_run_once_receives_and_deploys(tmp_path: Path) -> None:
         root=tmp_path / "runtime",
     )
 
-    release = tmp_path / "runtime" / "projects" / "demo" / "releases" / commit_id
+    release = tmp_path / "runtime" / "projects" / "demo" / "releases" / commit_id.replace(":", "-")
     assert ran is True
     assert (release / "app.py").read_text(encoding="utf-8") == "print(1)"
     assert (tmp_path / "runtime" / "projects" / "demo" / "current").resolve() == release

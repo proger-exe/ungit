@@ -144,7 +144,7 @@ def test_runtime_project_release_switch_and_rollback(tmp_path: Path) -> None:
     release2 = create_release(tmp_path, "demo", commit2)
 
     assert project_root == tmp_path / "projects" / "demo"
-    assert release1.exists()
+    assert release1.name == "sha256-" + "1" * 64
     assert release2.exists()
 
     switch_current(tmp_path, "demo", commit1)
@@ -155,9 +155,28 @@ def test_runtime_project_release_switch_and_rollback(tmp_path: Path) -> None:
     assert (project_root / "current").resolve() == release2
     assert (project_root / "previous").resolve() == release1
 
+    assert read_state(tmp_path, "demo")["previous_commit"] == commit1
+
     rollback_current(tmp_path, "demo")
     assert (project_root / "current").resolve() == release1
-    assert read_state(tmp_path, "demo")["last_deploy_status"] == "rollback"
+    state = read_state(tmp_path, "demo")
+    assert (state["current_commit"], state["previous_commit"]) == (commit1, commit2)
+    assert state["last_deploy_status"] == "rollback"
+
+
+def test_restore_accepts_release_named_with_colon(tmp_path: Path) -> None:
+    # Releases created before release_name() keep the commit's ':' in their directory.
+    commit = "sha256:" + "1" * 64
+    project_root = ensure_agent_project(tmp_path, "demo")
+    legacy = project_root / "releases" / commit
+    legacy.mkdir()
+    state = {"project": "demo", "current_commit": commit, "current_release": str(legacy),
+             "previous_commit": None, "previous_release": None}
+
+    rollback_current(tmp_path, "demo", restore_state=state)
+
+    assert (project_root / "current").resolve() == legacy
+    assert read_state(tmp_path, "demo")["current_commit"] == commit
 
 
 def test_runtime_switch_requires_release(tmp_path: Path) -> None:
