@@ -46,6 +46,8 @@ receive -> verify -> release -> preship -> ship -> switch -> postship -> health 
       state.json
 ```
 
+Каталог релиза — commit id с `-` вместо `:` (`sha256-<hex>`): двоеточие ломает Docker `-v`, `PATH` и `scp`.
+
 ## MVP commands
 
 ```bash

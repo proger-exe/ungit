@@ -90,17 +90,16 @@ def test_cli_push_deploy_failure_and_manual_rollback(tmp_path):
             assert "test-agent" in cli("ungit", "pipeline", "list")
             env["UNGIT_AGENT_TOKEN"] = agent_token
 
-            def queue(version):
+            def queue(version, *flags, expected=0):
                 before = set((core_root / "jobs").glob("*.json"))
                 (repo / "version").write_text(version)
                 (repo / ".ungit/deploy/health.sh").write_text(health_script)
                 cli("ungit", "add", ".")
                 # A later workspace edit must not alter what was staged.
                 (repo / "version").write_text("unstaged")
-                cli("ungit", "push", "master", "-c", version)
-                created = set((core_root / "jobs").glob("*.json")) - before
-                assert len(created) == 1
-                return created.pop()
+                out = cli("ungit", "push", "master", "-c", version, *flags, expected=expected)
+                assert len(set((core_root / "jobs").glob("*.json")) - before) == 1
+                return out
 
             def deploy(version, *, failed=False):
                 queue(version)
@@ -136,15 +135,12 @@ def test_cli_push_deploy_failure_and_manual_rollback(tmp_path):
             daemon = subprocess.Popen([str(bin_dir / "ungit-agent"), "run", "--name", "test-agent",
                                        "--core-url", url, "--root", str(runtime), "--interval", "0.05"],
                                       env=env, stdout=log, stderr=log)
-            for version, status in [("broken", "failed"), ("v4", "success")]:
-                job_file = queue(version)
-                for _ in range(100):
-                    assert daemon.poll() is None, "agent stopped after a failed job"
-                    if json.loads(job_file.read_text())["status"] == status:
-                        break
-                    time.sleep(0.05)
-                else:
-                    raise AssertionError(f"agent did not finish {version}")
+            # --wait follows the deploy: the failing stage's log tail, then the rollback.
+            out = queue("broken", "--wait", expected=1)
+            assert "AssertionError" in out and "[rollback] success" in out
+            assert out.rstrip().splitlines()[-1].startswith("[deploy] failed")
+            assert daemon.poll() is None, "agent stopped after a failed job"
+            assert queue("v4", "--wait").rstrip().endswith("[deploy] success")
             with urlopen(app_url, timeout=2) as response:
                 assert response.read() == b"v4"
         finally:

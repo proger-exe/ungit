@@ -24,16 +24,21 @@ def ensure_agent_project(root: str | Path, project: str) -> Path:
     return project_root
 
 
+def release_name(commit_id: str) -> str:
+    # ':' (sha256:...) breaks tools that split paths on it: Docker -v, PATH, scp.
+    return safe_segment(commit_id, label="commit id").replace(":", "-")
+
+
 def create_release(root: str | Path, project: str, commit_id: str) -> Path:
     project_root = ensure_agent_project(root, project)
-    release = project_root / "releases" / safe_segment(commit_id, label="commit id")
+    release = project_root / "releases" / release_name(commit_id)
     release.mkdir(parents=True, exist_ok=False)
     return release
 
 
 def switch_current(root: str | Path, project: str, commit_id: str) -> None:
     project_root = ensure_agent_project(root, project)
-    release = _release_target(project_root, Path("releases") / safe_segment(commit_id, label="commit id"))
+    release = _release_target(project_root, Path("releases") / release_name(commit_id))
 
     current = project_root / "current"
     previous = project_root / "previous"
@@ -51,7 +56,7 @@ def switch_current(root: str | Path, project: str, commit_id: str) -> None:
         {
             "project": project,
             "current_commit": commit_id,
-            "previous_commit": _commit_from_release_target(old_target),
+            "previous_commit": state.get("current_commit") if old_target else None,
             "current_release": str(release),
             "previous_release": str(project_root / old_target) if old_target else None,
             "last_deploy_status": "switched",
@@ -66,9 +71,9 @@ def rollback_current(root: str | Path, project: str, *, restore_state: dict[str,
         state = dict(restore_state)
         targets = {}
         for name in ("current", "previous"):
-            commit = state.get(f"{name}_commit")
-            targets[name] = (_release_target(project_root, Path("releases") / safe_segment(commit, label="commit id"))
-                             if commit else None)
+            # The recorded path, not the commit: releases made before release_name() keep their ':'.
+            release = state.get(f"{name}_release")
+            targets[name] = _release_target(project_root, Path(release)) if release else None
         for name in ("current", "previous"):
             link = project_root / name
             if targets[name] is not None:
@@ -98,8 +103,8 @@ def rollback_current(root: str | Path, project: str, *, restore_state: dict[str,
     state.update(
         {
             "project": project,
-            "current_commit": release.name,
-            "previous_commit": _commit_from_release_target(old_target),
+            "current_commit": state.get("previous_commit"),
+            "previous_commit": state.get("current_commit") if old_target else None,
             "current_release": str(release),
             "previous_release": str(project_root / old_target) if old_target else None,
             "last_deploy_status": "rollback",
@@ -182,9 +187,3 @@ def _replace_symlink(link: Path, target: Path) -> None:
     relative_target = os.path.relpath(target, link.parent)
     tmp.symlink_to(relative_target)
     os.replace(tmp, link)
-
-
-def _commit_from_release_target(target: Path | None) -> str | None:
-    if target is None:
-        return None
-    return target.name

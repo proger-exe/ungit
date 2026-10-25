@@ -123,10 +123,11 @@ __pycache__/
 *.pyc
 ```
 
+Плюс шаблоны из `.ungitignore` в корне (подмножество gitignore: без `!` и `**`).
+
 Позже добавить поддержку:
 
 ```text
-.ungitignore
 .gitignore
 ```
 
@@ -146,6 +147,8 @@ __pycache__/
 7. uploads payload to remote core
 8. core creates pipeline jobs
 ```
+
+С `--wait` CLI дальше читает события заданий (`GET /jobs/<id>/events`), печатает их и выходит с кодом 1, если деплой упал. Событие упавшей стадии несёт последние 30 строк её лога.
 
 ## Delivery
 

@@ -64,6 +64,9 @@ class CoreRequestHandler(BaseHTTPRequestHandler):
             self.end_headers()
             self.wfile.write(raw)
             return
+        if len(parts) == 3 and parts[0] == "jobs" and parts[2] == "events":
+            self._json(200, self.core_store.job_events(parts[1], actor))
+            return
         self._json(404, {"error": "not found"})
 
     def do_POST(self) -> None:

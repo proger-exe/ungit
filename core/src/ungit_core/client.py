@@ -86,6 +86,9 @@ class CoreClient:
         target.write_bytes(raw)
         return target
 
+    def job_events(self, job_id: str) -> dict[str, Any]:
+        return self._get_json(f"/jobs/{job_id}/events")
+
     def add_event(self, job_id: str, status: str, line: str | None = None) -> dict[str, Any]:
         return self._post(f"/jobs/{job_id}/events", {"status": status, "line": line})
 
